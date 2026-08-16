@@ -3,3 +3,15 @@ model_list:
     litellm_params:
       model: gemini/gemini-3.5-flash-lite
       api_key: os.environ/GEMINI_API_KEY
+
+
+litellm_settings:
+  cache: true                        # Turn caching on
+  enable_redis_auth_cache: true      # Shares API key/virtual key validation details over Redis
+  require_auth_for_metrics_endpoint: false
+  callbacks:
+    - prometheus
+  cache_params:
+    type: redis
+    host: redis                      # References the docker-compose service name
+    port: 6379

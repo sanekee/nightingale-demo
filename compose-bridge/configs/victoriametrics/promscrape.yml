@@ -10,3 +10,8 @@ scrape_configs:
     metric_relabel_configs:
       - action: labeldrop
         regex: "^container_label_.*$"
+  - job_name: litellm
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - litellm:4000
