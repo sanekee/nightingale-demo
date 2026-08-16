@@ -203,6 +203,7 @@ services:
     
   postgres:
     image: postgres:18
+    container_name: postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: litellm
@@ -217,7 +218,22 @@ services:
     networks:
       - nightingale
 
+  loki:
+    image: grafana/loki:3.6.0
+    container_name: loki
+    user: "0:0"
+    command: -config.file=/etc/loki/config.yaml
+    restart: unless-stopped
+    ports:
+      - "13100:3100"
+    volumes:
+      - ./configs/loki/config.yaml:/etc/loki/config.yaml:ro
+      - loki-data:/loki
+    networks:
+      - nightingale
+
 volumes:
   grafana-storage:
   litellm-postgres:
+  loki-data:
 

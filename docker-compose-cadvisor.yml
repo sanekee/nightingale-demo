@@ -23,3 +23,16 @@ services:
       - "--docker=unix:///var/run/docker.sock"
       - "--docker_env_metadata_whitelist=GCR"
       - "--allow_dynamic_housekeeping=true"
+
+  alloy:
+    image: grafana/alloy:latest
+    restart: unless-stopped
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - "--server.http.listen-addr=0.0.0.0:12345"
+    ports:
+      - "12345:12345"
+    volumes:
+      - ./configs/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock
