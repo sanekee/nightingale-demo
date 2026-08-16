@@ -9,6 +9,8 @@ This deployment includes:
 - **Nightingale (n9e)** - Core monitoring platform for alerts and rules management
 - **Prometheus** - Metrics scraping and collection
 - **VictoriaMetrics** - High-performance time-series database backend
+- **Loki** - Log aggregation and querying
+- **Alloy** - Telemetry collection and forwarding for logs/metrics
 - **MySQL** - Database for Nightingale metadata and user management
 - **Redis** - Cache and session management
 - **Grafana** - Metrics visualization and dashboarding (with optional Entra ID SSO)
@@ -25,101 +27,48 @@ This deployment includes:
 - Git
 - For WSL users: Docker Desktop for Windows with WSL 2 integration
 
-## Manual Password Configuration
+## Configuration Setup
 
-⚠️ **Important:** Before starting the stack for the first time, you must manually replace placeholder passwords in configuration files with values from your `.env` file.
+This stack renders the config files from templates using values from `.env`.
 
-### Overview
+### Setup Steps
 
-Two passwords need to be configured:
-- **`MYSQL_ROOT_PASSWORD`** - MySQL database root password
-- **`NIGHTINGALE_PASSWORD`** - Nightingale admin (root) user password
+1. **Create your environment file from the sample:**
+   ```bash
+   cd compose-bridge
+   cp .env.sample .env
+   ```
 
-Both are defined in `.env` and must be manually inserted into configuration files and initialization scripts.
+2. **Edit `.env` and set the required values** for MySQL, Nightingale, Grafana, LiteLLM, PostgreSQL, and any optional SSO or AI keys.
 
-### Configuration Steps
+3. **Generate the rendered config files:**
+   ```bash
+   make gen-configs
+   ```
 
-#### 1. MySQL Configuration (`configs/nightingale/config.toml`)
+4. **Start the stack:**
+   ```bash
+   docker-compose up -d
+   ```
 
-**File:** `configs/nightingale/config.toml`
+5. **Verify services are running:**
+   ```bash
+   docker-compose ps
+   ```
 
-Find the line:
-```toml
-DSN="root:${MYSQL_ROOT_PASSWORD}@tcp(mysql:3306)/n9e_v6?charset=utf8mb4&collation=utf8mb4_general_ci&parseTime=True&loc=Local&allowNativePasswords=true"
-```
-
-Replace `${MYSQL_ROOT_PASSWORD}` with the actual password value from your `.env` file.
-
-**Example** (if `MYSQL_ROOT_PASSWORD=MySecurePass123`):
-```toml
-DSN="root:MySecurePass123@tcp(mysql:3306)/n9e_v6?charset=utf8mb4&collation=utf8mb4_general_ci&parseTime=True&loc=Local&allowNativePasswords=true"
-```
-
-#### 2. Categraf MySQL Plugin (`configs/categraf/input.mysql/mysql.toml`)
-
-**File:** `configs/categraf/input.mysql/mysql.toml`
-
-Find the line:
-```toml
-password = "${MYSQL_ROOT_PASSWORD}"
-```
-
-Replace `${MYSQL_ROOT_PASSWORD}` with the actual password value from your `.env` file.
-
-**Example** (if `MYSQL_ROOT_PASSWORD=MySecurePass123`):
-```toml
-password = "MySecurePass123"
-```
-
-#### 3. MySQL User Initialization (`configs/mysql/initsql/a-n9e.sql`)
-
-**File:** `configs/mysql/initsql/a-n9e.sql`
-
-Find the line (around line 26):
-```sql
-insert into `users`(id, username, nickname, password, roles, create_at, create_by, update_at, update_by) values(1, 'root', 'Admin', '${NIGHTINGALE_PASSWORD}', 'Admin', unix_timestamp(now()), 'system', unix_timestamp(now()), 'system');
-```
-
-Replace `${NIGHTINGALE_PASSWORD}` with the actual password value from your `.env` file.
-
-**Example** (if `NIGHTINGALE_PASSWORD=MyAdminPass456`):
-```sql
-insert into `users`(id, username, nickname, password, roles, create_at, create_by, update_at, update_by) values(1, 'root', 'Admin', 'MyAdminPass456', 'Admin', unix_timestamp(now()), 'system', unix_timestamp(now()), 'system');
-```
-
-### Verification Checklist
-
-Before running `docker-compose up`, verify:
-
-- [ ] `.env` file exists and contains `MYSQL_ROOT_PASSWORD` and `NIGHTINGALE_PASSWORD`
-- [ ] `configs/nightingale/config.toml` has actual password in DSN string (no `${MYSQL_ROOT_PASSWORD}` placeholder)
-- [ ] `configs/categraf/input.mysql/mysql.toml` has actual password in password field (no `${MYSQL_ROOT_PASSWORD}` placeholder)
-- [ ] `configs/mysql/initsql/a-n9e.sql` has actual password in INSERT statement (no `${NIGHTINGALE_PASSWORD}` placeholder)
+> The `make gen-configs` target reads `compose-bridge/.env` and fills the `.tpl` templates under `compose-bridge/configs/`, so you do not need to manually replace `${...}` placeholders in generated files.
 
 ---
 
 ### Quick Start
 
-1. **Clone the repository:**
-   ```bash
-   cd compose-bridge
-   ```
-
-2. **Configure environment variables:**
-   ```bash
-   cp .env.sample .env
-   ```
-   Edit `.env` and set the required values (see [Configuration](#configuration) below).
-
-3. **Start the stack:**
-   ```bash
-   docker-compose up -d
-   ```
-
-4. **Verify services are running:**
-   ```bash
-   docker-compose ps
-   ```
+```bash
+cd compose-bridge
+cp .env.sample .env
+# edit .env with your secrets
+make gen-configs
+docker-compose up -d
+``` 
 
 ### Service Access
 
@@ -131,6 +80,8 @@ Once deployed, access services at:
 | **Grafana** | http://localhost:13000 | `${GRAFANA_ADMIN_USER}` / `${GRAFANA_ADMIN_PASSWORD}` |
 | **Prometheus** | http://localhost:9090 | — |
 | **VictoriaMetrics** | http://localhost:8428 | — |
+| **Loki** | http://localhost:3100 | — |
+| **Alloy** | http://localhost:12345 | — |
 | **cAdvisor** | http://localhost:13080 | — |
 | **MySQL** | localhost:3306 | root / `${MYSQL_ROOT_PASSWORD}` |
 | **Redis** | localhost:6379 | — |
@@ -244,42 +195,40 @@ If cAdvisor fails to start:
 
 ### Environment Variables (.env)
 
-Create or update `compose-bridge/.env` with required variables:
+Start from `compose-bridge/.env.sample` and create your local `compose-bridge/.env`:
 
 ```env
-# MySQL
-MYSQL_ROOT_PASSWORD=<your_secure_password>
-
-# Nightingale
-NIGHTINGALE_PASSWORD=<your_secure_password>
-
-# Grafana
-GRAFANA_ADMIN_USER=admin
-GRAFANA_ADMIN_PASSWORD=<your_secure_password>
-
-# LiteLLM
-LITELLM_MASTER_KEY=<your_litellm_key>
-
-# Optional: Cloudflared Tunnel
-CLOUDFLARED_TUNNEL_TOKEN=<your_tunnel_token>
-
-# Optional: Microsoft Entra ID (SSO)
+CLOUDFLARED_TUNNEL_TOKEN=<YOUR_CLOUDFLARED_TOKEN>
+GEMINI_API_KEY=<YOUR_GEMINI_API_KEY>
 ENTRA_ENABLED=false
-ENTRA_TENANT_ID=<your_tenant_id>
-ENTRA_CLIENT_ID=<your_client_id>
-ENTRA_CLIENT_SECRET=<your_client_secret>
-ENTRA_ROOT_URL=https://your-grafana-url/
-
-# Optional: Gemini API
-GEMINI_API_KEY=<your_gemini_api_key>
+ENTRA_TENANT_ID=<YOUR_ENTRA_TENANT_ID>
+ENTRA_CLIENT_ID=<YOUR_ENTRA_CLIENT_ID>
+ENTRA_CLIENT_SECRET=<YOUR_ENTRA_CLIENT_SECRET>
+GF_SERVER_ROOT_URL=<YOUR_GRAFANA_URL>
+LITELLM_MASTER_KEY=<YOUR_LITELLM_MASTER_KEY>
+MYSQL_ROOT_PASSWORD=<YOUR_MYSQL_ROOT_PASSWORD>
+GRAFANA_ADMIN_USER=<YOUR_GRAFANA_ADMIN_USER>
+GRAFANA_ADMIN_PASSWORD=<YOUR_GRAFANA_ADMIN_PASSWORD>
+NIGHTINGALE_PASSWORD=<YOUR_NIGHTINGALE_PASSWORD>
+POSTGRES_PASSWORD=<YOUR_POSTGRES_PASSWORD>
 ```
+
+Then run:
+
+```bash
+make gen-configs
+```
+
+This renders the template files under `compose-bridge/configs/` from the values in `.env`.
 
 ### Service Configurations
 
-Key configuration files:
+Key configuration files generated from templates:
 
 - **Nightingale:** `configs/nightingale/config.toml` - Core platform settings
 - **Prometheus:** `configs/prometheus/prometheus.yml` - Scrape targets
+- **Loki:** `configs/loki/config.yaml` - Log storage and query configuration
+- **Alloy:** `configs/alloy/config.alloy` - Telemetry collection and forwarding
 - **Categraf:** `configs/categraf/config.toml` - Metrics collection
 - **VictoriaMetrics:** `configs/victoriametrics/promscrape.yml` - Remote write config
 - **LiteLLM:** `configs/litellm/config.yaml` - LLM provider configuration
