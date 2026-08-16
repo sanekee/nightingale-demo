@@ -2,7 +2,7 @@
 mysqldata
 
 
-./configs/categraf/input.mysql/mysql.toml
-./configs/nightingale/config.toml
-./configs/mysql/initsql/a-n9e.sql
-./configs/mysql/initsql/c-init.sql
+configs/categraf/input.mysql/mysql.toml
+configs/nightingale/config.toml
+configs/mysql/initsql/a-n9e.sql
+configs/mysql/initsql/c-init.sql
