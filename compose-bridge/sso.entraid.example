@@ -1,0 +1,18 @@
+Enable = false
+DisplayName = 'Sign in with Microsoft'
+RedirectURL = 'https://n9e.sample.app/callback'
+SsoAddr = 'https://login.microsoftonline.com/TENANT_ID/v2.0'
+SsoLogoutAddr = 'https://login.microsoftonline.com/TENANT_ID/oauth2/v2.0/logout'
+ClientId = 'CLIENT_ID'
+ClientSecret = 'CLIENT_SECRET'
+CoverAttributes = true
+DefaultRoles = ['Standard']
+Scopes = ['openid', 'profile', 'email', 'phone']
+
+[Attributes]
+Username = 'email'
+Nickname = 'nickname'
+Phone = 'phone_number'
+Email = 'email'
+Sub = 'sub'
+PreferredUsername = 'preferred_username'

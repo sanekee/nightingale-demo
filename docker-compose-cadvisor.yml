@@ -1,0 +1,25 @@
+
+services:
+  cadvisor:
+    image: ghcr.io/google/cadvisor:0.56.2
+    hostname: cadvisor
+    container_name: cadvisor
+    restart: always
+    environment:
+      - DOCKER_API_VERSION=1.44
+    ports:
+      - "13080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /dev/disk:/dev/disk:ro
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    command:
+      - "--docker_only=true"
+      - "--docker=unix:///var/run/docker.sock"
+      - "--docker_env_metadata_whitelist=GCR"
+      - "--allow_dynamic_housekeeping=true"

@@ -1,0 +1,204 @@
+networks:
+  nightingale:
+    driver: bridge
+
+services:
+  # doesn't work due to wsl -> docker desktop bridge
+  # cadvisor:
+  #   # image: gcr.io/cadvisor/cadvisor:v0.56.2
+  #   privileged: true
+  #   image: ghcr.io/google/cadvisor:0.56.2
+  #   hostname: cadvisor
+  #   container_name: cadvisor
+  #   restart: always
+  #   environment:
+  #     - DOCKER_API_VERSION=1.44
+  #   ports:
+  #     - "13080:8080"
+  #   volumes:
+  #     - /:/rootfs:ro
+  #     - /var/run:/var/run:ro
+  #     - /sys:/sys:ro
+  #     - /var/lib/docker:/var/lib/docker:ro
+  #     - /var/run/docker.sock:/var/run/docker.sock:ro
+  #     - /dev/disk:/dev/disk:ro
+  #   devices:
+  #     - /dev/kmsg:/dev/kmsg
+  #   networks:
+  #     - nightingale
+  #   command:
+  #     - "--docker_only=true"
+  #     - "--docker=unix:///var/run/docker.sock"
+  #     - --docker_env_metadata_whitelist=GCR
+  #     - --allow_dynamic_housekeeping=true
+
+  mysql:
+    image: "mysql:8"
+    container_name: mysql
+    hostname: mysql
+    restart: always
+    environment:
+      TZ: UTC
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - ./mysqldata:/var/lib/mysql/
+      - ./configs/mysql/initsql:/docker-entrypoint-initdb.d/
+      - ./configs/mysql/my.cnf:/etc/my.cnf
+    networks:
+      - nightingale
+    ports:
+      - "3306:3306"
+
+  redis:
+    image: "redis:6.2"
+    container_name: redis
+    hostname: redis
+    restart: always
+    environment:
+      TZ: UTC
+    networks:
+      - nightingale
+    ports:
+      - "6379:6379"
+
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    hostname: prometheus
+    restart: always
+    environment:
+      TZ: UTC
+    volumes:
+      - ./configs/prometheus:/etc/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+      - "--enable-feature=remote-write-receiver"
+      - "--query.lookback-delta=2m"
+    networks:
+      - nightingale
+    ports:
+      - "9090:9090"
+
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.79.12
+    container_name: victoriametrics
+    hostname: victoriametrics
+    restart: always
+    environment:
+      TZ: UTC
+    ports:
+      - "8428:8428"
+    networks:
+      - nightingale
+    volumes:
+      - ./configs/victoriametrics/promscrape.yml:/etc/victoriametrics/promscrape.yml:ro
+    command:
+      - "--loggerTimezone=UTC"
+      - "--promscrape.config=/etc/victoriametrics/promscrape.yml"
+
+  nightingale:
+    image: flashcatcloud/nightingale:latest
+    container_name: nightingale
+    hostname: nightingale
+    restart: always
+    environment:
+      GIN_MODE: release
+      TZ: UTC
+      WAIT_HOSTS: mysql:3306, redis:6379
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - ./configs/nightingale:/app/etc
+    networks:
+      - nightingale
+    ports:
+      - "17000:17000"
+      - "20090:20090"
+    depends_on:
+      - mysql
+      - redis
+      - victoriametrics
+    command:
+      - /app/n9e
+
+  categraf:
+    image: "flashcatcloud/categraf:latest"
+    container_name: "categraf"
+    hostname: "categraf01"
+    restart: always
+    environment:
+      TZ: UTC
+      HOST_PROC: /hostfs/proc
+      HOST_SYS: /hostfs/sys
+      HOST_MOUNT_PREFIX: /hostfs
+      WAIT_HOSTS: nightingale:17000, nightingale:20090
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - ./configs/categraf:/etc/categraf/conf
+      - /:/hostfs
+    networks:
+      - nightingale
+    depends_on:
+      - nightingale
+
+
+  grafana:
+    image: grafana/grafana-enterprise:latest
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - '13000:3000'
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin123!}
+      - GF_AUTH_GENERIC_OAUTH_ENABLED=${ENTRA_ENABLED:-false}
+      - GF_SERVER_ROOT_URL=${ENTRA_ROOT_URL}
+      - GF_AUTH_GENERIC_OAUTH_NAME=Microsoft Entra ID
+      - GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP=true
+      - GF_AUTH_GENERIC_OAUTH_CLIENT_ID=${ENTRA_CLIENT_ID}
+      - GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=${ENTRA_CLIENT_SECRET}
+      - GF_AUTH_GENERIC_OAUTH_SCOPES=openid email profile
+      - GF_AUTH_GENERIC_OAUTH_AUTH_URL=https://login.microsoftonline.com/${ENTRA_TENANT_ID}/oauth2/v2.0/authorize
+      - GF_AUTH_GENERIC_OAUTH_TOKEN_URL=https://login.microsoftonline.com/${ENTRA_TENANT_ID}/oauth2/v2.0/token
+      - GF_AUTH_GENERIC_OAUTH_API_URL=https://graph.microsoft.com/oidc/userinfo
+      - GF_AUTH_GENERIC_OAUTH_USE_PKCE=true
+      - GF_AUTH_GENERIC_OAUTH_USE_REFRESH_TOKEN=true
+      - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH='Editor'
+      - GF_AUTH_GENERIC_OAUTH_SKIP_ORG_ROLE_SYNC=false
+    volumes:
+      - grafana-storage:/var/lib/grafana
+    networks:
+      - nightingale
+  
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: n9e-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARED_TUNNEL_TOKEN}
+    depends_on:
+      - nightingale
+    networks:
+      - nightingale 
+
+  litellm:
+    image: docker.litellm.ai/berriai/litellm:main-latest
+    container_name: litellm
+    command:
+      - "--config"
+      - "/app/config.yaml"
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+    volumes:
+      - ./configs/litellm/config.yaml:/app/config.yaml:ro
+    ports:
+      - "14000:4000"
+    networks:
+      - nightingale
+    
+
+volumes:
+  grafana-storage:
+
